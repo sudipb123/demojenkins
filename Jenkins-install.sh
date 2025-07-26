@@ -2,68 +2,91 @@
 
 set -e
 
-# Function to display the Jenkins initial admin password
+# --- Helper Functions ---
+
+log() {
+    echo -e "\033[1;34m[INFO]\033[0m $1"
+}
+
+error_exit() {
+    echo -e "\033[1;31m[ERROR]\033[0m $1" >&2
+    exit 1
+}
+
 show_jenkins_password() {
-    echo -e "\nFetching Jenkins initial admin password..."
+    log "Fetching Jenkins initial admin password..."
     if [ -f /var/lib/jenkins/secrets/initialAdminPassword ]; then
         sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-        echo -e "\nYou can now access Jenkins at: http://<your_server_ip>:8080"
+        ip_addr=$(hostname -I | awk '{print $1}')
+        echo -e "\nJenkins is ready at: http://$ip_addr:8080"
     else
-        echo "Could not find the Jenkins initial admin password file."
+        error_exit "Initial admin password file not found."
     fi
 }
 
-# Function for Debian/Ubuntu systems
-install_jenkins_debian() {
-    echo "Detected Debian/Ubuntu system."
-    sudo apt update
-    sudo apt install -y openjdk-11-jdk wget gnupg
+install_debian_family() {
+    log "Detected Debian/Ubuntu system"
 
-    # Add Jenkins key and repository
-    wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
-    echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/ | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+    export DEBIAN_FRONTEND=noninteractive
+
+    log "Updating system packages..."
+    sudo apt update && sudo apt upgrade -y
+
+    log "Installing Java and required packages..."
+    sudo apt install -y openjdk-11-jdk wget curl gnupg
+
+    log "Adding Jenkins GPG key and repo..."
+    curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+    echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | \
+        sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
 
     sudo apt update
     sudo apt install -y jenkins
 
-    sudo systemctl enable jenkins
-    sudo systemctl start jenkins
+    sudo systemctl enable --now jenkins
 
     show_jenkins_password
 }
 
-# Function for RHEL/CentOS/Fedora systems
-install_jenkins_rhel() {
-    echo "Detected RHEL/CentOS/Fedora system."
-    sudo yum install -y java-11-openjdk-devel wget
+install_fedora_family() {
+    log "Detected Fedora/CentOS/RHEL system"
 
-    sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+    log "Updating system packages..."
+    sudo dnf upgrade -y
+
+    log "Installing Java and required packages..."
+    sudo dnf install -y java-11-openjdk-devel wget curl
+
+    log "Adding Jenkins repo and GPG key..."
+    sudo curl -o /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
     sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
 
-    sudo yum install -y jenkins
+    sudo dnf install -y jenkins
 
-    sudo systemctl enable jenkins
-    sudo systemctl start jenkins
+    sudo systemctl enable --now jenkins
 
     show_jenkins_password
 }
 
-# Detect OS and call appropriate install function
+# --- OS Detection ---
+
 if [ -f /etc/os-release ]; then
     . /etc/os-release
+
     case "$ID" in
         ubuntu|debian)
-            install_jenkins_debian
+            install_debian_family
             ;;
-        centos|rhel|fedora)
-            install_jenkins_rhel
+        fedora|rhel|centos|rocky|almalinux)
+            install_fedora_family
             ;;
         *)
-            echo "Unsupported Linux distribution: $ID"
-            exit 1
+            error_exit "Unsupported OS: $ID"
             ;;
     esac
 else
-    echo "Cannot detect OS. /etc/os-release not found."
-    exit 1
-fi
+    error_exit "/etc/os-release not found — cannot determine OS."
+fi..
+
+
+
