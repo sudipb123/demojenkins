@@ -86,7 +86,5 @@ if [ -f /etc/os-release ]; then
     esac
 else
     error_exit "/etc/os-release not found — cannot determine OS."
-fi..
-
-
+fi
 
